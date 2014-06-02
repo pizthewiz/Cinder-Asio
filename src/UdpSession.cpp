@@ -54,6 +54,7 @@ UdpSession::UdpSession( boost::asio::io_service& io )
 
 UdpSession::~UdpSession()
 {
+	mReadEventHandler2 = nullptr;
 }
 
 void UdpSession::read()
@@ -64,8 +65,9 @@ void UdpSession::read()
 void UdpSession::read( size_t bufferSize )
 {
 	mBufferSize = bufferSize;
-	mSocket->async_receive( mResponse.prepare( bufferSize ), 
-		boost::bind( &UdpSession::onRead, shared_from_this(), 
+	mSocket->async_receive_from( mResponse.prepare( bufferSize ),
+		mRemoteEndpoint,
+		boost::bind( &UdpSession::onRead, shared_from_this(),
 			boost::asio::placeholders::error, 
 			boost::asio::placeholders::bytes_transferred ) );
 }
@@ -84,4 +86,47 @@ void UdpSession::write( const Buffer& buffer )
 const UdpSocketRef& UdpSession::getSocket() const
 {
 	return mSocket;
+}
+
+void UdpSession::onRead( const boost::system::error_code& err, size_t bytesTransferred )
+{
+	if ( err ) {
+		if ( err == boost::asio::error::eof ) {
+			if ( mReadCompleteEventHandler != nullptr ) {
+				mReadCompleteEventHandler();
+			}
+		} else {
+			if ( mErrorEventHandler != nullptr ) {
+				mErrorEventHandler( err.message(), bytesTransferred );
+			}
+		}
+	} else {
+		if ( mReadEventHandler2 != nullptr ) {
+			char* data = new char[ bytesTransferred + 1 ]();
+			data[ bytesTransferred ] = 0;
+			mResponse.commit( bytesTransferred );
+			istream stream( &mResponse );
+			stream.read( data, bytesTransferred );
+			mReadEventHandler2( Buffer( data, bytesTransferred ), mRemoteEndpoint );
+			delete [] data;
+		} else if ( mReadEventHandler != nullptr ) {
+			char* data = new char[ bytesTransferred + 1 ]();
+			data[ bytesTransferred ] = 0;
+			mResponse.commit( bytesTransferred );
+			istream stream( &mResponse );
+			stream.read( data, bytesTransferred );
+			mReadEventHandler( Buffer( data, bytesTransferred ) );
+			delete [] data;
+		}
+		if ( mReadCompleteEventHandler != nullptr &&
+			mBufferSize > 0 && bytesTransferred < mBufferSize ) {
+			mReadCompleteEventHandler();
+		}
+	}
+	mResponse.consume( mResponse.size() );
+}
+
+void UdpSession::connectReadEventHandler2( const std::function<void( ci::Buffer, boost::asio::ip::udp::endpoint )>& eventHandler )
+{
+	mReadEventHandler2 = eventHandler;
 }

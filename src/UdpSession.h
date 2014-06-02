@@ -55,11 +55,23 @@ public:
 	virtual void			read( size_t bufferSize );
 	virtual void			write( const ci::Buffer& buffer );
 
+	template< typename T, typename Y >
+	inline void				connectReadEventHandler2( T eventHandler, Y* eventHandlerObject )
+	{
+		connectReadEventHandler2( std::bind( eventHandler, eventHandlerObject, std::placeholders::_2 ) );
+	}
+	void					connectReadEventHandler2( const std::function<void( ci::Buffer, boost::asio::ip::udp::endpoint )>& eventHandler );
+
 	const UdpSocketRef&		getSocket() const;
 protected:
 	UdpSession( boost::asio::io_service& io );
 
 	UdpSocketRef			mSocket;
+
+	void onRead( const boost::system::error_code& err, size_t bytesTransferred );
+
+	boost::asio::ip::udp::endpoint mRemoteEndpoint;
+	std::function<void( ci::Buffer, boost::asio::ip::udp::endpoint )> mReadEventHandler2;
 
 	friend class			UdpClient;
 	friend class			UdpServer;
